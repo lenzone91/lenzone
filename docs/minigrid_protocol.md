@@ -45,25 +45,25 @@ The initial recent window is `W = 4` steps (*initial*). Compare several state bu
 
 ## Current implementation
 
-The code currently focuses on one trajectory generator for MemoryS11. It saves partial observations, actions, rewards, termination flags, paired branch labels, and a manifest in train/validation/test files. There is no standalone audit command or test suite at this stage. The generator keeps local checks for a visible initial cue, no cue reappearance during the waiting period, and one successful branch per episode.
+The data pipeline uses one trajectory generator for MemoryS11. It saves partial observations, actions, rewards, termination flags, paired branch labels, and a manifest in train/validation/test files. There is no standalone audit command or test suite at this stage. The generator keeps local checks for a visible initial cue, no cue reappearance during the waiting period, and one successful branch per episode.
 
 Run the generator directly, without a subcommand:
 
 ```bash
-python scripts/minigrid_data.py --output runs/minigrid/my_run --episodes-per-env 30 --seed-start 1000 --gifs 3
+python -m src.generate --output runs/minigrid/my_run --episodes-per-env 30 --seed-start 1000 --gifs 3
 ```
 
 `--gifs N` selects N distinct episodes uniformly without replacement from all three splits. Selection uses a dedicated RNG initialized with `seed_start`, so previews are reproducible and do not affect trajectories. Zero GIFs is the default; the maximum is the total episode count. GIFs are saved in `gifs/` and listed in the manifest. They show the global map with the agent's local visibility highlighted, followed by separate replays of each candidate branch. The global render is not model input.
 
-The next milestone is to implement the no-memory and rolling-window predictors before the recurrent and slot models.
+The current predictors use either the current observation or the last four observations, with preceding actions. They share the encoder design and a common training loop, but the rolling-window head has more parameters. Training selects the checkpoint with lowest validation NLL; evaluation reports test NLL and accuracy overall and by delay. Recurrent and slot models, repeated training seeds, and budget matching remain future work.
 
 ## Fixed first collection policy and limitations
 
-The MemoryS11 collection policy is fixed in `scripts/minigrid_data.py`. After the seeded reset, it places the agent at (1, 5), facing north toward the cue at (1, 4). Object identities and branch arrangements remain seeded. It turns east, advances seven times to x=8, optionally performs 0, 8, or 16 extra turns according to `seed % 3`, then advances once to x=9 before the branch choice. The starting cue is invisible from x=8 in all four orientations.
+The MemoryS11 collection policy is fixed in `src/generate.py`. After the seeded reset, it places the agent at (1, 5), facing north toward the cue at (1, 4). Object identities and branch arrangements remain seeded. It turns east, advances seven times to x=8, optionally performs 0, 8, or 16 extra turns according to `seed % 3`, then advances once to x=9 before the branch choice. The starting cue is invisible from x=8 in all four orientations.
 
 Generation tracks the starting cue by projecting its world position into each partial observation. This distinguishes it from the candidate objects at the fork. The initial observation must expose the cue, and the cue must remain invisible from the start of the waiting period through the query. `cue_t` records its last actual appearance (currently index 1), giving delays of 8, 16, and 24 steps. Visibility diagnostics and cue times describe the generated episode; future predictors must receive only past observations/actions and the candidate actions, excluding these diagnostics and target labels. The policy version changes so earlier datasets must be regenerated.
 
-This is an initial controlled retention test: the extra turns vary the delay without introducing new facts or distractors. A later maze should test interference and multiple persistent facts. The saved episodes include target labels for training. The future training loader must slice observations at `query_t` and expose only past observations/actions and the candidate action sequence. No model-input loader is implemented yet.
+This is an initial controlled retention test: the extra turns vary the delay without introducing new facts or distractors. A later maze should test interference and multiple persistent facts. The saved episodes include target labels for training. The future training loader must slice observations at `query_t` and expose only past observations/actions and the candidate action sequence. `src/data.py` implements this input preparation for the two baselines.
 
 ## References
 

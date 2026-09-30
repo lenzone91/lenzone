@@ -29,10 +29,10 @@ conda activate lenzone
 
 ## First MiniGrid data milestone
 
-The [trajectory generator](scripts/minigrid_data.py) implements the first step of the [MiniGrid protocol](docs/minigrid_protocol.md). It creates paired delayed-choice queries in MemoryS11. Generated datasets go under `runs/`, which is ignored by Git.
+The [trajectory generator](src/generate.py) implements the first step of the [MiniGrid protocol](docs/minigrid_protocol.md). It creates paired delayed-choice queries in MemoryS11. Generated datasets go under `runs/`, which is ignored by Git.
 
 ```bash
-python scripts/minigrid_data.py --output runs/minigrid/my_first_run --episodes-per-env 30 --gifs 3
+python -m src.generate --output runs/minigrid/my_first_run --episodes-per-env 30 --gifs 3
 ```
 
 | Argument | Purpose | Default |
@@ -46,13 +46,37 @@ Each run contains `manifest.json`, `train.jsonl.gz`, `validation.jsonl.gz`, and 
 
 Use `--gifs N` to render N distinct episodes randomly selected from train, validation, and test together. The selection is reproducible from `--seed-start`; the default is 0 GIFs. Previews are saved under `gifs/` and listed in the manifest. Each shows the trajectory and both candidate branches as separate replays. The global map is for visual inspection only; the model data remains partially observed.
 
-Choose an output directory that does not already exist. Only MemoryS11 is collected: the default run contains 30 episodes, split into 24 training, 3 validation, and 3 test episodes, with two candidate queries per episode. Datasets from the earlier collection policy must be regenerated in a new directory. The code currently focuses on generation; there is no standalone audit or test suite.
+Choose an output directory that does not already exist. Only MemoryS11 is collected: the default run contains 30 episodes, split into 24 training, 3 validation, and 3 test episodes, with two candidate queries per episode. Datasets from the earlier collection policy must be regenerated in a new directory. There is no standalone audit or test suite; generation and training remain small, separate modules.
 
 The agent starts facing the cue, moves away, and waits beyond the cue's visibility range before the branch query. Delays of 8, 16, and 24 steps are measured from the cue's last appearance, not just the initial observation.
 
+## First predictive models
+
+The Python modules live directly under `src/`; run commands from the repository root. No package installation is needed.
+
+| Module | Role |
+| --- | --- |
+| `generate.py` | Generate MemoryS11 episodes and optional GIFs |
+| `data.py` | Load one split and build past-only candidate examples |
+| `models.py` | Symbolic observation encoder and success predictor |
+| `train.py` | Shared training loop and validation checkpoint selection |
+| `evaluate.py` | NLL and accuracy overall and by retention delay |
+
+Each episode provides two prediction examples. Inputs contain the current view (`current`) or last four views (`window`), their preceding actions, and the two proposed future actions. Object, color, state, direction, and action codes are one-hot encoded. Visibility metadata, cue times, rewards, and labels are excluded from model inputs. Labels are used only for the training loss and evaluation.
+
+```bash
+python -m src.train --dataset runs/minigrid/smoke --output runs/models/current --model current
+python -m src.train --dataset runs/minigrid/smoke --output runs/models/window --model window
+python -m src.evaluate --dataset runs/minigrid/smoke --checkpoint runs/models/current/best.pt --output runs/models/current/test.json
+```
+
+Training saves `best.pt` selected by validation NLL and `training.json` with configuration, parameter count, and epoch metrics. Evaluation defaults to the test split. The default device is CPU; add `--device cuda` for GPU execution. Training output directories must be new. These first models predict candidate success; they do not choose the agent's exploration actions.
+
+The 30-episode smoke dataset is for execution checks. Use larger datasets and multiple training seeds before drawing conclusions about memory. The two baselines share architecture choices, not trained weights, and the window model has a larger head; measured memory/compute matching remains future work.
+
 ## Current status
 
-The [research draft](docs/len_zone_.pdf) describes the motivation, predictive-state formulation, proposed slot lifecycle, and initial learning objectives. It is a work in progress, not a validated result. The trajectory generator is implemented; predictive models and benchmark results are still to come.
+The [research draft](docs/len_zone_.pdf) describes the motivation, predictive-state formulation, proposed slot lifecycle, and initial learning objectives. It is a work in progress, not a validated result. The generator and two small predictors are implemented: current-view (`current`) and four-view (`window`) baselines. They share an encoder design and training loop; their prediction heads have different parameter counts. GRU and slot memory are still planned. Small execution checks are not benchmark results.
 
 ## Planned first steps
 
